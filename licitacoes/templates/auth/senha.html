@@ -7,7 +7,8 @@
   <form method="post">
     <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
     <label>Senha atual <input type="password" name="senha_atual" required autocomplete="current-password"></label>
-    <label>Nova senha <input type="password" name="nova_senha" required minlength="8" autocomplete="new-password"></label>
+    <label>Nova senha <input type="password" name="nova_senha" required minlength="8" autocomplete="new-password">
+      <small>Mínimo de 8 caracteres, com letras e números ou símbolos. Não use palavras óbvias (senha, prefeitura…), sequências (12345678), seu nome ou login, nem a senha anterior.</small></label>
     <label>Confirme a nova senha <input type="password" name="confirmacao" required minlength="8" autocomplete="new-password"></label>
     <button class="primario">Salvar</button>
   </form>

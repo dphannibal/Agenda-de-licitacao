@@ -8,7 +8,7 @@ import click
 from flask import Flask, Response, abort, g, render_template, request, session, url_for
 from werkzeug.security import generate_password_hash
 
-from . import brasao, db, parametros
+from . import brasao, cripto, db, parametros, senhas
 from .perfis import PERFIS
 
 
@@ -34,6 +34,8 @@ def create_app(config=None):
     )
     if config:
         app.config.update(config)
+    if not app.config.get("CHAVE_DADOS"):
+        app.config["CHAVE_DADOS"] = cripto.carregar_chave(app.config["PASTA_DADOS"])
 
     app.teardown_appcontext(db.close_db)
     app.before_request(_validar_csrf)
@@ -142,19 +144,26 @@ def _registrar_comandos(app):
     def criar_admin(login, password):
         """Cria (ou redefine a senha de) um usuário administrador."""
         conn = db.get_db()
-        existente = conn.execute("SELECT id FROM usuarios WHERE login = ?", (login,)).fetchone()
+        existente = conn.execute("SELECT * FROM usuarios WHERE login = ?",
+                                 (cripto.indice_login(login),)).fetchone()
+        anteriores = (existente["senha_hash"], existente["senha_anterior_hash"]) \
+            if existente else ()
+        motivo = senhas.problema(password, login=login, anteriores=anteriores)
+        if motivo:
+            raise click.ClickException(motivo)
         senha_hash = generate_password_hash(password)
         if existente:
             conn.execute(
-                "UPDATE usuarios SET senha_hash = ?, perfil = 'administrador', ativo = 1,"
-                " trocar_senha = 0 WHERE id = ?",
-                (senha_hash, existente["id"]),
+                "UPDATE usuarios SET senha_hash = ?, senha_anterior_hash = ?,"
+                " perfil = 'administrador', ativo = 1, trocar_senha = 0 WHERE id = ?",
+                (senha_hash, existente["senha_hash"], existente["id"]),
             )
         else:
             conn.execute(
-                "INSERT INTO usuarios (nome, login, senha_hash, perfil, trocar_senha)"
-                " VALUES (?, ?, ?, 'administrador', 0)",
-                ("Administrador", login, senha_hash),
+                "INSERT INTO usuarios (nome, login, login_cifrado, senha_hash, perfil,"
+                " trocar_senha) VALUES (?, ?, ?, ?, 'administrador', 0)",
+                ("Administrador", cripto.indice_login(login), cripto.cifrar_login(login),
+                 senha_hash),
             )
         conn.commit()
         click.echo(f"Administrador '{login}' pronto para uso.")

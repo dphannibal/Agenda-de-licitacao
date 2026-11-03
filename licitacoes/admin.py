@@ -1,12 +1,12 @@
 """Administração de usuários e trilha de auditoria."""
-import re
 import secrets
 from datetime import date
 
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 from werkzeug.security import generate_password_hash
 
-from .auth import permissao
+from . import cripto
+from .auth import FORMATO_LOGIN, _senha_pessoal, permissao
 from .db import get_db, registrar
 from . import parametros as P
 from .perfis import FASES_ABERTAS, PERFIS, PERMISSOES, TIPOS_AFASTAMENTO, VINCULOS, VINCULOS_EFETIVOS
@@ -19,7 +19,6 @@ def _descricoes_perfis():
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
-FORMATO_LOGIN = re.compile(r"^[a-zA-Z0-9._-]{3,40}$")
 ITENS_POR_PAGINA = 50
 
 
@@ -37,7 +36,8 @@ def _senha_temporaria():
 @bp.route("/usuarios")
 @permissao("usuarios")
 def usuarios():
-    lista = get_db().execute("SELECT * FROM usuarios ORDER BY ativo DESC, nome").fetchall()
+    lista = [cripto.com_login(u) for u in
+             get_db().execute("SELECT * FROM usuarios ORDER BY ativo DESC, nome")]
     return render_template("admin/usuarios.html", usuarios=lista, descricoes=_descricoes_perfis())
 
 
@@ -53,7 +53,8 @@ def novo_usuario():
             erros.append("Informe o nome.")
         if not FORMATO_LOGIN.match(dados["login"]):
             erros.append("Login deve ter de 3 a 40 caracteres: letras, números, ponto, hífen ou _.")
-        elif conn.execute("SELECT 1 FROM usuarios WHERE login = ?", (dados["login"],)).fetchone():
+        elif conn.execute("SELECT 1 FROM usuarios WHERE login = ?",
+                          (cripto.indice_login(dados["login"]),)).fetchone():
             erros.append("Já existe um usuário com esse login.")
         if dados["perfil"] not in PERFIS:
             erros.append("Selecione um perfil válido.")
@@ -64,12 +65,13 @@ def novo_usuario():
         else:
             senha = _senha_temporaria()
             conn.execute(
-                "INSERT INTO usuarios (nome, login, email, senha_hash, perfil, trocar_senha)"
-                " VALUES (?, ?, ?, ?, ?, 1)",
-                (dados["nome"], dados["login"], dados["email"] or None,
+                "INSERT INTO usuarios (nome, login, login_cifrado, email, senha_hash, perfil,"
+                " trocar_senha) VALUES (?, ?, ?, ?, ?, ?, 1)",
+                (dados["nome"], cripto.indice_login(dados["login"]),
+                 cripto.cifrar_login(dados["login"]), dados["email"] or None,
                  generate_password_hash(senha), dados["perfil"]),
             )
-            registrar("Cadastro de usuário", referencia=dados["login"],
+            registrar("Cadastro de usuário", referencia=dados["nome"],
                       detalhes=f"Perfil: {PERFIS[dados['perfil']]}")
             conn.commit()
             flash(f"Usuário criado. Senha temporária de “{dados['login']}”: {senha} — "
@@ -84,7 +86,7 @@ def novo_usuario():
 @permissao("usuarios")
 def editar_usuario(id_):
     usuario = _buscar_usuario(id_)
-    dados = dict(usuario)
+    dados = cripto.com_login(usuario)
     if request.method == "POST":
         dados.update({c: request.form.get(c, "").strip() for c in ("nome", "email", "perfil")})
         dados["ativo"] = 1 if request.form.get("ativo") else 0
@@ -118,7 +120,7 @@ def editar_usuario(id_):
                 (dados["nome"], dados["email"] or None, dados["perfil"], dados["ativo"], id_),
             )
             if mudancas:
-                registrar("Alteração de usuário", referencia=usuario["login"],
+                registrar("Alteração de usuário", referencia=usuario["nome"],
                           detalhes="; ".join(mudancas))
             conn.commit()
             flash("Usuário atualizado.", "sucesso")
@@ -135,12 +137,14 @@ def redefinir_senha(id_):
     senha = _senha_temporaria()
     conn = get_db()
     conn.execute(
-        "UPDATE usuarios SET senha_hash = ?, trocar_senha = 1 WHERE id = ?",
-        (generate_password_hash(senha), id_),
+        "UPDATE usuarios SET senha_hash = ?, senha_anterior_hash = ?, trocar_senha = 1"
+        " WHERE id = ?",
+        (generate_password_hash(senha), _senha_pessoal(usuario), id_),
     )
-    registrar("Redefinição de senha", referencia=usuario["login"])
+    registrar("Redefinição de senha", referencia=usuario["nome"])
     conn.commit()
-    flash(f"Nova senha temporária de “{usuario['login']}”: {senha}", "sucesso")
+    flash(f"Nova senha temporária de “{cripto.decifrar_login(usuario['login_cifrado'])}”: "
+          f"{senha}", "sucesso")
     return redirect(url_for("admin.usuarios"))
 
 

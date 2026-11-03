@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block titulo %}Restaurar a agenda{% endblock %}
+{% block conteudo %}
+<div class="cartao estreito login">
+  <h1>Restaurar a agenda</h1>
+  {% if remoto %}
+  <p class="aviso aviso-info">Este computador está assumindo a agenda. A restauração só pode ser concluída no próprio computador servidor, pelo atalho “Agenda de Licitações” da área de trabalho dele.</p>
+  {% else %}
+  <p>A pasta do Google Drive tem cópias criptografadas da agenda, feitas por outro computador. Informe a senha de recuperação para abri-las: este computador restaura a última cópia e passa a servir a agenda.</p>
+  <form method="post">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <label>Senha de recuperação <input type="password" name="senha" required autofocus autocomplete="off"></label>
+    <button class="primario">Restaurar</button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

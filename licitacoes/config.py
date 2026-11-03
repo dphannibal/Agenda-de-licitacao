@@ -7,11 +7,12 @@ from datetime import date
 
 from flask import (Blueprint, abort, current_app, flash, g, redirect, render_template, request,
                    url_for)
+from werkzeug.security import check_password_hash
 
 from . import brasao
 from . import feriados as F
 from . import parametros as P
-from .auth import login_obrigatorio, permissao
+from .auth import login_obrigatorio, permissao, problema_na_senha_recuperacao
 from .db import get_db, registrar
 from .perfis import FASES, FASES_DA_ACAO, FASES_ABERTAS, PERFIL_TOTAL, PERFIS, PERMISSOES, PRAZOS
 
@@ -104,6 +105,33 @@ def salvar_geral():
         conn.commit()
         P.invalidar()
     flash("Nome do órgão salvo.", "sucesso")
+    return redirect(url_for("config.parametros"))
+
+
+@bp.route("/parametros/recuperacao", methods=["POST"])
+@somente_administrador
+def senha_recuperacao():
+    """Define ou troca a senha de recuperação das cópias na nuvem."""
+    nuvem = current_app.config.get("NUVEM")
+    if nuvem is None:
+        abort(404)
+    senha = request.form.get("recuperacao", "")
+    erros = []
+    if not check_password_hash(g.usuario["senha_hash"], request.form.get("senha_atual", "")):
+        erros.append("A sua senha não confere.")
+    else:
+        motivo = problema_na_senha_recuperacao(
+            senha, request.form.get("recuperacao_confirmacao", ""))
+        if motivo:
+            erros.append(motivo)
+        elif check_password_hash(g.usuario["senha_hash"], senha):
+            erros.append("A senha de recuperação deve ser diferente da senha do administrador.")
+    if not _erros(erros):
+        nuvem.definir_senha_recuperacao(senha)
+        registrar("Alteração de parâmetro", referencia="Senha de recuperação das cópias")
+        get_db().commit()
+        flash("Senha de recuperação salva. Anote-a num lugar seguro, fora do computador.",
+              "sucesso")
     return redirect(url_for("config.parametros"))
 
 

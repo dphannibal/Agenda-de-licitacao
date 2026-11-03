@@ -12,8 +12,18 @@
     <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
     <label>Nome <input name="nome" required autofocus value="{{ request.form.nome }}"></label>
     <label>Usuário (login) <input name="login" required autocomplete="username" value="{{ request.form.login }}"></label>
-    <label>Senha <input type="password" name="senha" required minlength="8" autocomplete="new-password"></label>
+    <label>Senha <input type="password" name="senha" required minlength="8" autocomplete="new-password">
+      <small>Mínimo de 8 caracteres, com letras e números ou símbolos. Não use palavras óbvias (senha, prefeitura…), sequências (12345678), seu nome ou login, nem a senha anterior.</small></label>
     <label>Confirme a senha <input type="password" name="confirmacao" required minlength="8" autocomplete="new-password"></label>
+    {% if pedir_recuperacao %}
+    <fieldset>
+      <legend>Senha de recuperação das cópias no Google Drive</legend>
+      <p class="sutil">As cópias enviadas ao Google Drive são criptografadas. Esta senha é pedida só para restaurar a agenda em outro computador. <strong>Anote-a num lugar seguro, fora do computador:</strong> sem ela, ninguém consegue abrir as cópias.</p>
+      <label>Senha de recuperação <input type="password" name="recuperacao" required minlength="8" autocomplete="new-password">
+        <small>Diferente da senha do administrador; mesmas regras.</small></label>
+      <label>Confirme a senha de recuperação <input type="password" name="recuperacao_confirmacao" required minlength="8" autocomplete="new-password"></label>
+    </fieldset>
+    {% endif %}
     <button class="primario">Criar administrador</button>
   </form>
   {% endif %}

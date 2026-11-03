@@ -26,7 +26,7 @@ from waitress import serve
 
 from licitacoes import __version__, create_app
 from licitacoes.db import get_db
-from licitacoes.nuvem import CopiaNuvem, OutroAnfitriao
+from licitacoes.nuvem import AGUARDANDO, PRONTA, SEM_SENHA, CopiaNuvem, OutroAnfitriao
 
 # Empacotado pelo instalador (PyInstaller), o programa é o AgendaLicitacoes.exe.
 EMPACOTADO = getattr(sys, "frozen", False)
@@ -94,6 +94,9 @@ def main():
                                         "que recebe as cópias do banco")
     parser.add_argument("--copia-minutos", type=int, default=5,
                         help="Intervalo entre as cópias para a nuvem (padrão: 5 minutos)")
+    parser.add_argument("--restaurar-copia", metavar="ARQUIVO",
+                        help="Com --nuvem: restaura uma cópia (ex.: das cópias diárias) e "
+                             "encerra. Pare o sistema antes.")
     parser.add_argument("--versao", action="version",
                         version=f"Agenda de Licitações {__version__}")
     args = parser.parse_args()
@@ -116,6 +119,15 @@ def main():
         try:
             if not args.preparar:
                 nuvem.assumir()
+            nuvem.verificar_chave()
+            if args.restaurar_copia:
+                if nuvem.estado != PRONTA:
+                    raise ValueError("este computador não tem a chave das cópias")
+                nuvem.restaurar_arquivo(args.restaurar_copia)
+                nuvem.liberar()
+                print(f"Banco restaurado de {args.restaurar_copia}; o anterior foi guardado "
+                      f"em {dados}.")
+                return
             if not nuvem.anfitriao_ativo():
                 mensagem = nuvem.restaurar_se_preciso()
                 if mensagem:
@@ -123,7 +135,7 @@ def main():
         except OutroAnfitriao as erro:
             print(erro)
             sys.exit(2)
-        except (OSError, sqlite3.Error) as erro:
+        except (OSError, ValueError, sqlite3.Error) as erro:
             # Sem conseguir ler a nuvem, não abre um banco que pode estar desatualizado.
             print(f"Não foi possível usar a pasta da nuvem {nuvem.pasta}: {erro}")
             sys.exit(1)
@@ -134,7 +146,7 @@ def main():
     with app.app_context():
         sem_administrador = not get_db().execute(
             "SELECT 1 FROM usuarios WHERE perfil = 'administrador' AND ativo = 1").fetchone()
-    if sem_administrador:
+    if sem_administrador and not (nuvem and nuvem.estado == AGUARDANDO):
         print("=" * 64)
         print(" Primeiro uso: abra http://localhost" + porta + "/ NESTE computador")
         print(" para criar a conta do administrador.")
@@ -153,6 +165,12 @@ def main():
     print(f"Dados (banco, chave e brasão): {dados}")
     if nuvem:
         print(f"Cópias do banco a cada {args.copia_minutos} min em: {nuvem.pasta}")
+        if nuvem.estado == AGUARDANDO:
+            print("A pasta da nuvem tem cópias criptografadas de outro computador: abra "
+                  f"http://localhost{porta}/ NESTE computador e informe a senha de recuperação.")
+        elif nuvem.estado == SEM_SENHA:
+            print("As cópias começam quando o administrador definir a senha de recuperação "
+                  "(Configurações).")
     try:
         dentro = os.path.commonpath([os.path.abspath(dados), PASTA_PROGRAMA]) == PASTA_PROGRAMA
     except ValueError:  # discos diferentes no Windows

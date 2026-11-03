@@ -1,12 +1,13 @@
 import io
 import json
+import os
 import re
 from datetime import date, timedelta
 
 import pytest
 from werkzeug.security import generate_password_hash
 
-from licitacoes import create_app
+from licitacoes import create_app, cripto
 from licitacoes.db import get_db
 from licitacoes.feriados import pascoa
 from licitacoes.perfis import FERIADOS_PADRAO
@@ -16,15 +17,16 @@ SENHA = "senha-segura-1"
 
 @pytest.fixture
 def app(tmp_path):
-    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "teste.sqlite3"),
-                      "SECRET_KEY": "teste", "PASTA_ARQUIVOS": str(tmp_path)})
+    app = create_app({"TESTING": True, "PASTA_DADOS": str(tmp_path),
+                      "DATABASE": str(tmp_path / "teste.sqlite3"), "SECRET_KEY": "teste"})
     with app.app_context():
         conn = get_db()
         for perfil in ("administrador", "gestor", "pregoeiro", "consulta"):
             conn.execute(
-                "INSERT INTO usuarios (nome, login, senha_hash, perfil, trocar_senha)"
-                " VALUES (?, ?, ?, ?, 0)",
-                (perfil.title(), perfil, generate_password_hash(SENHA), perfil),
+                "INSERT INTO usuarios (nome, login, login_cifrado, senha_hash, perfil,"
+                " trocar_senha) VALUES (?, ?, ?, ?, ?, 0)",
+                (perfil.title(), cripto.indice_login(perfil), cripto.cifrar_login(perfil),
+                 generate_password_hash(SENHA), perfil),
             )
         for nome, vinculo in (("Ana Efetiva", "efetivo"), ("Beto Efetivo", "efetivo"),
                               ("Caio Comissionado", "comissionado"),
@@ -193,7 +195,7 @@ def test_admin_gerencia_usuarios(client, app):
 
     # Admin não pode rebaixar a si mesmo.
     with app.app_context():
-        admin_id = get_db().execute("SELECT id FROM usuarios WHERE login='administrador'").fetchone()[0]
+        admin_id = get_db().execute("SELECT id FROM usuarios WHERE perfil='administrador'").fetchone()[0]
     resp = post(client, f"/admin/usuarios/{admin_id}/editar",
                 {"nome": "Adm", "perfil": "consulta", "ativo": "1"}, "/admin/usuarios")
     assert "próprio acesso de administrador" in resp.get_data(as_text=True)
@@ -215,7 +217,7 @@ def test_usuario_desativado_perde_acesso(client, app):
 
     entrar(client, "administrador")
     with app.app_context():
-        uid = get_db().execute("SELECT id FROM usuarios WHERE login='consulta'").fetchone()[0]
+        uid = get_db().execute("SELECT id FROM usuarios WHERE perfil='consulta'").fetchone()[0]
     post(client, f"/admin/usuarios/{uid}/editar",
          {"nome": "Consulta", "perfil": "consulta"}, "/admin/usuarios")
 
@@ -1022,44 +1024,78 @@ def _anfitriao(tmp_path, nome, nuvem):
     return CopiaNuvem(str(nuvem), str(tmp_path / nome), computador=nome)
 
 
-def _contar_servidores(dados):
+def _contar(pasta, tabela):
     import sqlite3
 
-    conn = sqlite3.connect(str(dados / "licitacoes.sqlite3"))
+    conn = sqlite3.connect(os.path.join(pasta, "licitacoes.sqlite3"))
     try:
-        return conn.execute("SELECT COUNT(*) FROM servidores").fetchone()[0]
+        return conn.execute(f"SELECT COUNT(*) FROM {tabela}").fetchone()[0]
     finally:
         conn.close()
 
 
-def test_copia_na_nuvem_e_restauracao_em_outro_computador(tmp_path):
+def _novo_usuario(app, login, perfil="administrador", nome="Maria Silva"):
+    with app.app_context():
+        get_db().execute(
+            "INSERT INTO usuarios (nome, login, login_cifrado, senha_hash, perfil, trocar_senha)"
+            " VALUES (?, ?, ?, ?, ?, 0)",
+            (nome, cripto.indice_login(login), cripto.cifrar_login(login),
+             generate_password_hash(SENHA), perfil))
+        get_db().commit()
+
+
+RECUPERACAO = "Cofre#Agenda-77"
+
+
+def test_copia_na_nuvem_criptografada_e_restauracao_em_outro_computador(tmp_path):
+    from licitacoes import nuvem as modulo
+
     nuvem = tmp_path / "Meu Drive" / "AgendaLicitacoes"
     a = _anfitriao(tmp_path, "PC-A", nuvem)
     a.assumir()
     app = create_app({"TESTING": True, "PASTA_DADOS": a.dados, "NUVEM": a})
-    with app.app_context():
-        get_db().execute("INSERT INTO servidores (nome, vinculo) VALUES ('Ana', 'efetivo')")
-        get_db().commit()
+    _novo_usuario(app, "maria.silva")
     (tmp_path / "PC-A" / "brasao.png").write_bytes(b"png")
-    assert a.copiar() and a.ultima_copia
-    assert not a.copiar()  # nada mudou: não copia de novo
-    assert (nuvem / "licitacoes.sqlite3").exists() and (nuvem / "brasao.png").exists()
+    # Sem senha de recuperação, nada vai para a nuvem.
+    assert a.verificar_chave() == modulo.SEM_SENHA and not a.copiar(forcar=True)
+    assert not (nuvem / "licitacoes.cifrado").exists()
+
+    a.definir_senha_recuperacao(RECUPERACAO)
+    assert a.ultima_copia and not a.copiar()  # nada mudou: não copia de novo
+    copia = (nuvem / "licitacoes.cifrado").read_bytes()
+    assert b"SQLite format" not in copia and b"maria.silva" not in copia
+    assert b"maria.silva" not in (tmp_path / "PC-A" / "licitacoes.sqlite3").read_bytes()
+    assert (nuvem / "chave.json").exists() and (nuvem / "brasao.png").exists()
     assert len(list((nuvem / "copias-diarias").iterdir())) == 1
 
     # O PC-A parou de responder: o PC-B só assume depois que a trava vence.
     b = _anfitriao(tmp_path, "PC-B", nuvem)
-    from licitacoes import nuvem as modulo
-
     with pytest.raises(modulo.OutroAnfitriao):
         b.assumir()
     trava = json.loads((nuvem / "anfitriao.json").read_text(encoding="utf-8"))
     trava["renovada"] -= modulo.TRAVA_VENCIDA + 1
     (nuvem / "anfitriao.json").write_text(json.dumps(trava), encoding="utf-8")
     b.assumir()
-    assert "PC-A" in b.restaurar_se_preciso()
-    assert _contar_servidores(tmp_path / "PC-B") == 1
+    assert b.verificar_chave() == modulo.AGUARDANDO
+    app_b = create_app({"TESTING": True, "PASTA_DADOS": b.dados, "NUVEM": b})
+    assert b.verificar_chave() == modulo.AGUARDANDO  # chave nova do PC-B não é a da nuvem
+    assert not b.copiar(forcar=True)
+
+    # A senha de recuperação só é aceita no próprio computador.
+    remoto = app_b.test_client()
+    remoto.environ_base["REMOTE_ADDR"] = "192.168.0.20"
+    assert remoto.get("/login").headers["Location"] == "/recuperacao"
+    assert remoto.get("/recuperacao").status_code == 403
+    client = app_b.test_client()
+    assert client.get("/").headers["Location"] == "/recuperacao"
+    resp = post(client, "/recuperacao", {"senha": "Errada#2026x"}, "/recuperacao")
+    assert "Senha de recuperação incorreta" in resp.get_data(as_text=True)
+    resp = post(client, "/recuperacao", {"senha": RECUPERACAO}, "/recuperacao")
+    assert resp.headers["Location"] == "/login"
+    assert "PC-A" in client.get("/login").get_data(as_text=True)
+    assert entrar(client, "maria.silva").headers["Location"] == "/"
     assert (tmp_path / "PC-B" / "brasao.png").read_bytes() == b"png"
-    b.copiar(forcar=True)
+    assert b.copiar(forcar=True)
 
     # O PC-A volta: percebe que perdeu a vez e não sobrescreve a cópia do PC-B.
     a._renovar_trava()
@@ -1071,12 +1107,14 @@ def test_copia_na_nuvem_e_restauracao_em_outro_computador(tmp_path):
     assert not (nuvem / "anfitriao.json").exists()
     a2 = _anfitriao(tmp_path, "PC-A", nuvem)
     a2.assumir()
+    assert a2.verificar_chave() == modulo.PRONTA
     assert a2.restaurar_se_preciso()
     assert any(p.name.startswith("licitacoes.anterior-") for p in (tmp_path / "PC-A").iterdir())
     a2.copiar()
     # Reiniciado, o mesmo computador retoma a vez e mantém o próprio banco.
     a3 = _anfitriao(tmp_path, "PC-A", nuvem)
     a3.assumir()
+    a3.verificar_chave()
     assert a3.restaurar_se_preciso() is None
 
 
@@ -1087,10 +1125,48 @@ def test_copias_diarias_guardam_trinta_dias(tmp_path):
     diarias = nuvem / "copias-diarias"
     diarias.mkdir(parents=True)
     for dia in range(1, 36):
-        (diarias / f"licitacoes-2026-01-{dia:02d}.sqlite3").write_bytes(b"")
-    a.copiar()
+        (diarias / f"licitacoes-2026-01-{dia:02d}.cifrado").write_bytes(b"")
+    a.definir_senha_recuperacao(RECUPERACAO)
     nomes = sorted(p.name for p in diarias.iterdir())
-    assert len(nomes) == 30 and "licitacoes-2026-01-01.sqlite3" not in nomes
+    assert len(nomes) == 30 and "licitacoes-2026-01-01.cifrado" not in nomes
+
+    # Restaurar um dia anterior: a cópia diária volta a ser o banco deste computador.
+    hoje = [p for p in diarias.iterdir() if p.stat().st_size][0]
+    _novo_usuario(create_app({"TESTING": True, "PASTA_DADOS": a.dados}), "depois.da.copia")
+    assert _contar(a.dados, "usuarios") == 1
+    a.restaurar_arquivo(str(hoje))
+    assert _contar(a.dados, "usuarios") == 0  # o usuário foi criado depois da cópia
+
+
+def test_configuracao_inicial_pede_a_senha_de_recuperacao(tmp_path):
+    from licitacoes import nuvem as modulo
+
+    a = _anfitriao(tmp_path, "PC-A", tmp_path / "nuvem")
+    app = create_app({"TESTING": True, "PASTA_DADOS": a.dados, "NUVEM": a})
+    client = app.test_client()
+    url = "/configuracao-inicial"
+    assert "Senha de recuperação" in client.get(url).get_data(as_text=True)
+    dados = {"nome": "Douglas", "login": "douglas", "senha": SENHA, "confirmacao": SENHA,
+             "recuperacao": SENHA, "recuperacao_confirmacao": SENHA}
+    assert "diferente da senha do administrador" in post(client, url, dados, url).get_data(
+        as_text=True)
+    dados.update(recuperacao=RECUPERACAO, recuperacao_confirmacao=RECUPERACAO)
+    assert post(client, url, dados, url).headers["Location"] == "/"
+    assert a.estado == modulo.PRONTA and (tmp_path / "nuvem" / "licitacoes.cifrado").exists()
+
+    # Troca da senha de recuperação: só o administrador, confirmando a própria senha.
+    pagina = "/admin/parametros"
+    post(client, "/admin/parametros/recuperacao",
+            {"senha_atual": "errada", "recuperacao": "Outra#Chave-88",
+             "recuperacao_confirmacao": "Outra#Chave-88"}, pagina)
+    assert "não confere" in client.get(pagina).get_data(as_text=True)
+    post(client, "/admin/parametros/recuperacao",
+         {"senha_atual": SENHA, "recuperacao": "Outra#Chave-88",
+          "recuperacao_confirmacao": "Outra#Chave-88"}, pagina)
+    embrulho = json.loads((tmp_path / "nuvem" / "chave.json").read_text(encoding="utf-8"))
+    assert cripto.desembrulhar(embrulho, "Outra#Chave-88") == app.config["CHAVE_DADOS"]
+    with pytest.raises(ValueError):
+        cripto.desembrulhar(embrulho, RECUPERACAO)
 
 
 def test_situacao_da_copia_nas_configuracoes(app, client):
@@ -1099,8 +1175,86 @@ def test_situacao_da_copia_nas_configuracoes(app, client):
 
     class Copia:
         pasta, intervalo, ultima_copia = r"G:\Meu Drive\Agenda", 300, "03/11/2026 10:15"
-        ultimo_erro = None
+        ultimo_erro, estado = None, "pronta"
 
     app.config["NUVEM"] = Copia()
     html = client.get("/admin/parametros").get_data(as_text=True)
     assert "03/11/2026 10:15" in html and "a cada 5 minuto(s)" in html
+    Copia.estado = "sem_senha"
+    assert "falta definir a senha de recuperação" in client.get(
+        "/admin/parametros").get_data(as_text=True)
+
+
+def test_logins_ficam_cifrados_no_banco(app, client, tmp_path):
+    assert entrar(client, "Administrador").headers["Location"] == "/"  # maiúsculas não importam
+    html = client.get("/admin/usuarios").get_data(as_text=True)
+    assert ">pregoeiro<" in html
+    with app.app_context():
+        logins = [r[0] for r in get_db().execute("SELECT login FROM usuarios")]
+    assert "pregoeiro" not in logins and all(len(l) == 64 for l in logins)
+
+
+def test_migracao_cifra_logins_antigos(tmp_path):
+    import sqlite3
+
+    app = create_app({"TESTING": True, "PASTA_DADOS": str(tmp_path)})
+    _novo_usuario(app, "provisorio")
+    conn = sqlite3.connect(str(tmp_path / "licitacoes.sqlite3"))
+    conn.execute("UPDATE usuarios SET login = 'joao.antigo', login_cifrado = NULL")
+    conn.execute("INSERT INTO historico (acao, referencia) VALUES ('Login', 'joao.antigo')")
+    conn.execute("PRAGMA user_version = 3")
+    conn.commit()
+    conn.close()
+    app = create_app({"TESTING": True, "PASTA_DADOS": str(tmp_path)})
+    assert entrar(app.test_client(), "joao.antigo").headers["Location"] == "/"
+    with app.app_context():
+        assert get_db().execute("SELECT referencia FROM historico WHERE acao = 'Login'"
+                                " ORDER BY id LIMIT 1").fetchone()[0] == "Maria Silva"
+    assert b"joao.antigo" not in (tmp_path / "licitacoes.sqlite3").read_bytes()
+
+
+@pytest.mark.parametrize("senha, motivo", [
+    ("Curta1!", "ao menos 8"),
+    ("somenteletras", "letras e também"),
+    ("12345678", "letras e também"),
+    ("senha123", "fácil"),
+    ("S3nh@2026", "fácil"),
+    ("Prefeitura2026!", "fácil"),
+    ("qwerty12", "fácil"),
+    ("abcdefgh1", "fácil"),
+    ("aaaa1111", "fácil"),
+    ("Pregoeiro#99", "fácil"),
+    ("Maria.2026x", "nome"),
+    ("x-maria.silva-9", "login"),
+])
+def test_senhas_faceis_sao_recusadas(senha, motivo):
+    from licitacoes.senhas import problema
+
+    assert motivo in problema(senha, login="maria.silva", nome="Maria Silva")
+    assert problema("Kq8#mZ2!rio", login="maria.silva", nome="Maria Silva") is None
+
+
+def test_troca_de_senha_nao_aceita_facil_nem_a_anterior(app, client):
+    entrar(client, "gestor")
+    dados = {"senha_atual": SENHA, "nova_senha": "12345678a", "confirmacao": "12345678a"}
+    assert "fácil" in post(client, "/senha", dados, "/senha").get_data(as_text=True)
+    dados.update(nova_senha=SENHA, confirmacao=SENHA)
+    assert "já foi usada" in post(client, "/senha", dados, "/senha").get_data(as_text=True)
+    dados.update(nova_senha="Rio#Paraiba-41", confirmacao="Rio#Paraiba-41")
+    assert post(client, "/senha", dados, "/senha").headers["Location"] == "/"
+
+    # O administrador redefine (senha temporária): voltar às duas últimas pessoais é recusado.
+    admin = app.test_client()
+    entrar(admin, "administrador")
+    with app.app_context():
+        uid = get_db().execute("SELECT id FROM usuarios WHERE perfil='gestor'").fetchone()[0]
+    post(admin, f"/admin/usuarios/{uid}/redefinir-senha", {}, "/admin/usuarios")
+    temporaria = re.search(r"Nova senha temporária de “gestor”: ([A-Za-z0-9_-]+)",
+                           admin.get("/admin/usuarios").get_data(as_text=True)).group(1)
+    novo = app.test_client()
+    entrar(novo, "gestor", temporaria)
+    dados = {"senha_atual": temporaria, "nova_senha": "Rio#Paraiba-41",
+             "confirmacao": "Rio#Paraiba-41"}
+    assert "já foi usada" in post(novo, "/senha", dados, "/senha").get_data(as_text=True)
+    dados.update(nova_senha="Serra#Mar-2027", confirmacao="Serra#Mar-2027")
+    assert post(novo, "/senha", dados, "/senha").headers["Location"] == "/"

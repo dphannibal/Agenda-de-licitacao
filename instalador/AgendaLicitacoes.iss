@@ -109,11 +109,12 @@ procedure InitializeWizard;
 begin
   PaginaNuvem := CreateInputDirPage(wpSelectTasks, 'Cópia de segurança no Google Drive',
     'Em qual pasta do Google Drive guardar as cópias do banco de dados?',
-    'O banco continua neste computador. A cada 5 minutos com alterações, uma cópia completa ' +
-    'vai para a pasta abaixo, junto com uma cópia por dia dos últimos 30 dias. Use uma pasta ' +
-    'dentro do "Meu Drive" com o Google Drive no modo "Espelhar arquivos".' + #13#10#13#10 +
-    'Se este computador quebrar, instale o programa em outro indicando a mesma pasta: ele ' +
-    'restaura a última cópia e assume. Dois computadores nunca servem a agenda ao mesmo tempo.',
+    'O banco continua neste computador. A cada 5 minutos com alterações, uma cópia completa e ' +
+    'criptografada vai para a pasta abaixo, junto com uma cópia por dia dos últimos 30 dias. ' +
+    'Use uma pasta dentro do "Meu Drive" com o Google Drive no modo "Espelhar arquivos". No ' +
+    'primeiro acesso, o sistema pede uma senha de recuperação para as cópias.' + #13#10#13#10 +
+    'Se este computador quebrar, instale o programa em outro indicando a mesma pasta e informe ' +
+    'a senha de recuperação no primeiro acesso: ele restaura a última cópia e assume.',
     False, 'AgendaLicitacoes');
   PaginaNuvem.Add('Pasta das cópias:');
   { Instalação silenciosa: /NUVEM="pasta". Atualização: a pasta escolhida da outra vez. }
@@ -206,6 +207,9 @@ begin
         '\Licitacoes e dê dois cliques em "Abrir Agenda de Licitações".';
     Texto := Texto + #13#10#13#10 + 'Primeira instalação: abra o atalho neste computador e crie a ' +
       'conta do administrador (só é possível neste computador).';
+    if PastaNuvem <> '' then
+      Texto := Texto + ' Se a pasta do Google Drive já tiver cópias de outro computador, o ' +
+        'atalho pede a senha de recuperação e restaura a agenda.';
     Texto := Texto + #13#10#13#10 + 'Os dados ficam em ' + ExpandConstant('{commonappdata}') +
       '\AgendaLicitacoes';
     if PastaNuvem <> '' then

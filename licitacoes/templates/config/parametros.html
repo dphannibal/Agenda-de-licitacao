@@ -36,9 +36,27 @@
 <section class="cartao">
   <h2>Cópia de segurança na nuvem</h2>
   {% if nuvem %}
-  <p>O banco fica neste computador e uma cópia completa vai para <strong>{{ nuvem.pasta }}</strong> a cada {{ nuvem.intervalo // 60 }} minuto(s), quando há alterações.</p>
+  <p>O banco fica neste computador e uma cópia completa e <strong>criptografada</strong> vai para <strong>{{ nuvem.pasta }}</strong> a cada {{ nuvem.intervalo // 60 }} minuto(s), quando há alterações.</p>
+  {% if nuvem.estado == 'sem_senha' %}
+  <div class="aviso aviso-erro">As cópias estão paradas: falta definir a senha de recuperação{% if g.usuario.perfil != 'administrador' %} (só o administrador pode defini-la){% endif %}.</div>
+  {% else %}
   <p>Última cópia: <strong>{{ nuvem.ultima_copia or 'ainda não feita' }}</strong></p>
+  {% endif %}
   {% if nuvem.ultimo_erro %}<div class="aviso aviso-erro">Falha: {{ nuvem.ultimo_erro }}</div>{% endif %}
+  {% if g.usuario.perfil == 'administrador' %}
+  <details {% if nuvem.estado == 'sem_senha' %}open{% endif %}>
+    <summary>{{ 'Definir' if nuvem.estado == 'sem_senha' else 'Trocar' }} a senha de recuperação</summary>
+    <p class="sutil">É pedida só para restaurar a agenda em outro computador. Anote-a num lugar seguro, fora do computador: sem ela, ninguém consegue abrir as cópias.</p>
+    <form method="post" action="{{ url_for('config.senha_recuperacao') }}" class="formulario estreito">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <label>Sua senha (administrador) <input type="password" name="senha_atual" required autocomplete="current-password"></label>
+      <label>Nova senha de recuperação <input type="password" name="recuperacao" required minlength="8" autocomplete="new-password">
+        <small>Mínimo de 8 caracteres, com letras e números ou símbolos, sem palavras óbvias nem sequências; diferente da sua senha.</small></label>
+      <label>Confirme a senha de recuperação <input type="password" name="recuperacao_confirmacao" required minlength="8" autocomplete="new-password"></label>
+      <button class="primario">Salvar senha de recuperação</button>
+    </form>
+  </details>
+  {% endif %}
   {% else %}
   <p class="sutil">Não configurada. O banco está só neste computador; para guardar cópias numa pasta do Google Drive, informe a pasta na instalação (ou inicie o servidor com a opção --nuvem).</p>
   {% endif %}

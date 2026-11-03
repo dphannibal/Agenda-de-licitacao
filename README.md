@@ -154,16 +154,25 @@ remove o programa, o compartilhamento, a regra do firewall e o início automáti
 Não dá para colocar o banco em uso dentro da pasta do Google Drive: o Drive não trava
 arquivos entre computadores e, sincronizando no meio de uma gravação, corromperia o banco
 ou perderia alterações. Por isso o banco fica no computador anfitrião e o sistema envia
-para a pasta do Drive **cópias completas e consistentes**:
+para a pasta do Drive **cópias completas, consistentes e criptografadas** (AES-256-GCM):
 
 ```
 ...\Meu Drive\AgendaLicitacoes\
-    licitacoes.sqlite3      ← última cópia (a cada 5 minutos, quando há alterações)
+    licitacoes.cifrado      ← última cópia (a cada 5 minutos, quando há alterações)
+    chave.json              ← chave das cópias, protegida pela senha de recuperação
     brasao.png
     copias-diarias\         ← uma cópia por dia, dos últimos 30 dias
     anfitriao.json          ← trava: qual computador está servindo a agenda
     copia.json              ← quem fez a última cópia, e quando
 ```
+
+**Senha de recuperação.** A chave que cifra as cópias fica no computador anfitrião
+(`C:\ProgramData\AgendaLicitacoes\chave_dados`) e vai para o Drive embrulhada com a senha
+de recuperação, definida na configuração inicial (ou em **Configurações**, pelo
+administrador). Quem invadir a conta do Google Drive não consegue abrir as cópias; enquanto
+a senha não é definida, nenhuma cópia é enviada. **Anote a senha de recuperação num lugar
+seguro, fora do computador:** se ela e o computador anfitrião se perderem, ninguém consegue
+abrir as cópias.
 
 - No Google Drive para computador, use **“Espelhar arquivos”** em “Meu Drive” e escolha uma
   pasta dentro de `C:\Users\...\Meu Drive`. A unidade virtual `G:` (modo “Transmitir
@@ -173,12 +182,16 @@ para a pasta do Drive **cópias completas e consistentes**:
   cada minuto; outro computador que tente iniciar o sistema com a mesma pasta é recusado e
   recebe o endereço do anfitrião.
 - **Se o anfitrião quebrar:** instale o programa em outro computador indicando a mesma pasta
-  do Drive. Quando a trava fica 10 minutos sem renovação, ele restaura a última cópia (e o
-  brasão) e assume. Se o antigo anfitrião voltar, ele percebe que perdeu a vez e para de
-  enviar cópias.
+  do Drive. Quando a trava fica 10 minutos sem renovação, ele assume: abra o atalho da área
+  de trabalho dele (só funciona no próprio computador), informe a senha de recuperação e ele
+  restaura a última cópia (e o brasão). Se o antigo anfitrião voltar, ele percebe que perdeu
+  a vez e para de enviar cópias.
 - O administrador e o gestor veem a data da última cópia (ou a falha) em **Configurações**.
-- Para restaurar um dia anterior: com o sistema parado, copie o arquivo de `copias-diarias`
-  sobre `C:\ProgramData\AgendaLicitacoes\licitacoes.sqlite3`.
+- Para restaurar um dia anterior: pare o sistema (Agendador de Tarefas → “Agenda de
+  Licitacoes” → Finalizar) e, num prompt de comando como administrador, execute
+  `C:\AgendaLicitacoes\AgendaLicitacoes.exe --nuvem "PASTA DO DRIVE" --restaurar-copia
+  "PASTA DO DRIVE\copias-diarias\licitacoes-AAAA-MM-DD.cifrado"`. O banco atual é guardado
+  ao lado, com a data no nome. Depois, inicie a tarefa de novo.
 
 Sem o instalador: `python servidor.py --nuvem "C:\Users\fulano\Meu Drive\AgendaLicitacoes"`
 (intervalo com `--copia-minutos`).
@@ -192,7 +205,20 @@ Ela só funciona **no próprio computador servidor** (atalho da área de trabalh
 servidor, para que ninguém se adiante e vire administrador. Depois que existe um
 administrador a tela deixa de existir — inclusive em atualizações e em bancos restaurados
 da cópia na nuvem. O sistema impede que um administrador tire o próprio acesso, então
-sempre sobra ao menos um.
+sempre sobra ao menos um. Com a cópia no Google Drive configurada, a mesma tela pede a
+senha de recuperação das cópias.
+
+### Logins e senhas
+
+- **Senhas** nunca são guardadas: o banco guarda só um resumo irreversível (scrypt), que não
+  pode ser convertido de volta na senha.
+- **Logins** ficam cifrados no banco (AES-256-GCM, com a chave do anfitrião); para achar o
+  usuário no login, o banco guarda um índice (HMAC) do login, que não revela o login.
+- Senhas pessoais precisam ter **ao menos 8 caracteres**, com letras e também números ou
+  símbolos, e são recusadas se forem **fáceis de adivinhar** (palavras óbvias como “senha”
+  ou “prefeitura”, mesmo com números ou trocas como `@` por `a`; sequências como
+  `12345678` ou `qwerty`; repetições), se contiverem o **nome ou o login** do usuário, ou se
+  forem a **senha atual ou a anterior**.
 
 Como o instalador não tem assinatura digital, o Windows pode mostrar “O Windows protegeu o
 computador”: clique em **Mais informações → Executar assim mesmo**.

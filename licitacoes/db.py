@@ -4,15 +4,17 @@ import sqlite3
 
 from flask import current_app, g
 
-from . import perfis
+from . import cripto, perfis
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS usuarios (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     nome          TEXT    NOT NULL,
-    login         TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+    login         TEXT    NOT NULL UNIQUE COLLATE NOCASE,  -- índice do login (cripto.py)
+    login_cifrado TEXT,                   -- login cifrado, para as telas
     email         TEXT,
     senha_hash    TEXT    NOT NULL,
+    senha_anterior_hash TEXT,             -- impede voltar à senha usada antes
     perfil        TEXT    NOT NULL,
     ativo         INTEGER NOT NULL DEFAULT 1,
     trocar_senha  INTEGER NOT NULL DEFAULT 1,
@@ -201,6 +203,8 @@ COLUNAS_NOVAS = {
     },
     "usuarios": {
         "preferencias": "TEXT",
+        "login_cifrado": "TEXT",
+        "senha_anterior_hash": "TEXT",
     },
 }
 
@@ -287,8 +291,25 @@ def _migrar_para_recursos(conn):
                  " WHERE nome = 'Emancipação de Três Rios' AND dia = 26 AND mes = 12")
 
 
+ACOES_DE_USUARIO = ("Login", "Troca de senha", "Cadastro de usuário", "Alteração de usuário",
+                    "Redefinição de senha", "Configuração inicial: administrador criado")
+
+
+def _migrar_para_logins_cifrados(conn):
+    """Logins deixam de ficar abertos no banco: cifrados, mais o índice para a busca."""
+    for id_, login, nome in conn.execute(
+            "SELECT id, login, nome FROM usuarios WHERE login_cifrado IS NULL").fetchall():
+        conn.execute("UPDATE usuarios SET login = ?, login_cifrado = ? WHERE id = ?",
+                     (cripto.indice_login(login), cripto.cifrar_login(login), id_))
+        # A trilha de auditoria passa a identificar o usuário pelo nome.
+        conn.execute("UPDATE historico SET referencia = ? WHERE referencia = ? AND acao IN"
+                     f" ({','.join('?' * len(ACOES_DE_USUARIO))})",
+                     (nome, login, *ACOES_DE_USUARIO))
+
+
 # Migrações de dados, aplicadas uma única vez (controle por PRAGMA user_version).
-MIGRACOES = [_migrar_para_parametros, _migrar_para_prazos, _migrar_para_recursos]
+MIGRACOES = [_migrar_para_parametros, _migrar_para_prazos, _migrar_para_recursos,
+             _migrar_para_logins_cifrados]
 
 
 def init_db():
