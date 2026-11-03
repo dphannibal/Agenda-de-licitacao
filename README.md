@@ -141,7 +141,8 @@ como administrador. Ele:
 - **libera a porta 8080** no firewall (redes privadas e de domínio);
 - faz o sistema **iniciar com o Windows**, mesmo sem ninguém logado;
 - guarda **cópias do banco numa pasta do Google Drive** (veja abaixo);
-- mostra, no fim, a **senha temporária do usuário `admin`**.
+- no primeiro acesso **pelo próprio computador servidor**, pede a criação da conta do
+  administrador (veja “Primeiro acesso” abaixo).
 
 Cada opção pode ser desmarcada no assistente. Para atualizar, basta executar o instalador da
 nova versão (os dados são mantidos). A desinstalação (Painel de Controle → Programas)
@@ -182,6 +183,17 @@ para a pasta do Drive **cópias completas e consistentes**:
 Sem o instalador: `python servidor.py --nuvem "C:\Users\fulano\Meu Drive\AgendaLicitacoes"`
 (intervalo com `--copia-minutos`).
 
+### Primeiro acesso
+
+Enquanto o banco não tiver nenhum administrador, qualquer página leva à tela
+**“Configuração inicial”**, onde se escolhem o nome, o login e a senha do administrador.
+Ela só funciona **no próprio computador servidor** (atalho da área de trabalho,
+`http://localhost:8080/`); pela rede aparece só o aviso para concluir a configuração no
+servidor, para que ninguém se adiante e vire administrador. Depois que existe um
+administrador a tela deixa de existir — inclusive em atualizações e em bancos restaurados
+da cópia na nuvem. O sistema impede que um administrador tire o próprio acesso, então
+sempre sobra ao menos um.
+
 Como o instalador não tem assinatura digital, o Windows pode mostrar “O Windows protegeu o
 computador”: clique em **Mais informações → Executar assim mesmo**.
 
@@ -208,8 +220,9 @@ C:\ProgramData\AgendaLicitacoes\           ← dados: NÃO compartilhar
    “Add python.exe to PATH”.
 2. Copie o programa para a pasta (ex.: `C:\Licitacoes`) e compartilhe-a na rede com
    permissão **somente leitura** para os usuários.
-3. Dê dois cliques em **`Iniciar servidor.bat`**. Na primeira vez ele prepara o ambiente e
-   mostra a senha temporária do usuário `admin`. Deixe a janela aberta.
+3. Dê dois cliques em **`Iniciar servidor.bat`**. Na primeira vez ele prepara o ambiente.
+   Deixe a janela aberta e, neste computador, abra `http://localhost:8080/` para criar a
+   conta do administrador.
 4. Se o Windows perguntar, permita o acesso do Python às **redes privadas**.
 5. Para iniciar junto com o Windows: tecle `Win + R`, digite `shell:startup` e coloque ali
    um atalho para `Iniciar servidor.bat`.
@@ -247,8 +260,8 @@ pip install -r requirements.txt
 python servidor.py --porta 8080
 ```
 
-Na primeira execução é criado o usuário **admin** e a senha temporária aparece no
-terminal (ou defina-a antes com a variável de ambiente `ADMIN_PASSWORD`). Os demais
+Na primeira execução, abra `http://localhost:8080/` no próprio servidor e crie a conta do
+administrador. Os demais
 servidores da secretaria acessam por `http://NOME-DO-SERVIDOR:8080/`.
 
 Primeiros passos: cadastre os usuários (menu **Usuários**) e os servidores que compõem as
@@ -265,7 +278,6 @@ flask --app licitacoes criar-admin --login admin
 | Variável         | Uso                                                                  |
 |------------------|----------------------------------------------------------------------|
 | `NOME_ORGAO`     | Nome exibido no topo das páginas (ex.: "Secretaria de Administração") |
-| `ADMIN_PASSWORD` | Senha inicial do admin no primeiro uso                               |
 | `SECRET_KEY`     | Chave das sessões; se omitida, é gerada em `instance/secret_key`     |
 | `AGENDA_DADOS`   | Pasta de dados (o mesmo que `--dados`); padrão: `instance/`          |
 

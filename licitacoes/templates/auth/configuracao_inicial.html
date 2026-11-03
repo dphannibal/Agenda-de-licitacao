@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block titulo %}Configuração inicial{% endblock %}
+{% block conteudo %}
+<div class="cartao estreito login">
+  {% if brasao_url %}<img class="brasao-login" src="{{ brasao_url }}" alt="Brasão do município">{% endif %}
+  <h1>Configuração inicial</h1>
+  {% if remoto %}
+  <p class="aviso aviso-info">O sistema ainda não foi configurado. A conta do administrador só pode ser criada no computador servidor, pelo atalho “Agenda de Licitações” da área de trabalho dele.</p>
+  {% else %}
+  <p>Crie a conta do administrador. Com ela você cadastra os servidores e os demais usuários.</p>
+  <form method="post">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <label>Nome <input name="nome" required autofocus value="{{ request.form.nome }}"></label>
+    <label>Usuário (login) <input name="login" required autocomplete="username" value="{{ request.form.login }}"></label>
+    <label>Senha <input type="password" name="senha" required minlength="8" autocomplete="new-password"></label>
+    <label>Confirme a senha <input type="password" name="confirmacao" required minlength="8" autocomplete="new-password"></label>
+    <button class="primario">Criar administrador</button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

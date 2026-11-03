@@ -24,7 +24,8 @@ import sys
 
 from waitress import serve
 
-from licitacoes import __version__, create_app, garantir_admin_inicial
+from licitacoes import __version__, create_app
+from licitacoes.db import get_db
 from licitacoes.nuvem import CopiaNuvem, OutroAnfitriao
 
 # Empacotado pelo instalador (PyInstaller), o programa é o AgendaLicitacoes.exe.
@@ -88,10 +89,7 @@ def main():
                                            "computador). Ex.: 192.168.0.10")
     parser.add_argument("--log", help="Arquivo onde também gravar as mensagens do servidor")
     parser.add_argument("--preparar", action="store_true",
-                        help="Só cria o banco, o administrador e o atalho, e encerra "
-                             "(usado pelo instalador)")
-    parser.add_argument("--senha-em", help="Com --preparar: arquivo onde gravar a senha "
-                                           "temporária do admin")
+                        help="Só cria o banco e o atalho, e encerra (usado pelo instalador)")
     parser.add_argument("--nuvem", help="Pasta sincronizada com a nuvem (ex.: Google Drive) "
                                         "que recebe as cópias do banco")
     parser.add_argument("--copia-minutos", type=int, default=5,
@@ -131,19 +129,16 @@ def main():
             sys.exit(1)
     app = create_app({"PASTA_DADOS": dados, "NUVEM": nuvem})
 
-    senha = garantir_admin_inicial(app)
-    if senha and args.senha_em:
-        with open(args.senha_em, "w", encoding="utf-8") as saida:
-            saida.write(senha)
-    if senha and not args.senha_em:  # com --senha-em, a senha não vai para o registro
-        print("=" * 64)
-        print(" Primeiro uso: usuário administrador criado.")
-        print(f"   login: admin   senha temporária: {senha}")
-        print(" Ela deverá ser trocada no primeiro acesso.")
-        print("=" * 64)
-
     endereco = args.endereco or socket.gethostname()
     porta = "" if args.porta == 80 else f":{args.porta}"
+    with app.app_context():
+        sem_administrador = not get_db().execute(
+            "SELECT 1 FROM usuarios WHERE perfil = 'administrador' AND ativo = 1").fetchone()
+    if sem_administrador:
+        print("=" * 64)
+        print(" Primeiro uso: abra http://localhost" + porta + "/ NESTE computador")
+        print(" para criar a conta do administrador.")
+        print("=" * 64)
     url = f"http://{endereco}{porta}/"
     try:
         atalho = criar_atalho(PASTA_PROGRAMA, url)

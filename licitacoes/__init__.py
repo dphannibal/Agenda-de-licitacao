@@ -159,18 +159,3 @@ def _registrar_comandos(app):
         conn.commit()
         click.echo(f"Administrador '{login}' pronto para uso.")
 
-
-def garantir_admin_inicial(app):
-    """No primeiro uso, cria o usuário 'admin' com senha temporária e a exibe."""
-    with app.app_context():
-        conn = db.get_db()
-        if conn.execute("SELECT 1 FROM usuarios LIMIT 1").fetchone():
-            return None
-        senha = os.environ.get("ADMIN_PASSWORD") or secrets.token_urlsafe(9)
-        conn.execute(
-            "INSERT INTO usuarios (nome, login, senha_hash, perfil, trocar_senha)"
-            " VALUES ('Administrador', 'admin', ?, 'administrador', 1)",
-            (generate_password_hash(senha),),
-        )
-        conn.commit()
-        return senha

@@ -2,7 +2,8 @@
 import functools
 
 from flask import (
-    Blueprint, abort, flash, g, redirect, render_template, request, session, url_for,
+    Blueprint, abort, current_app, flash, g, redirect, render_template, request, session,
+    url_for,
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -12,10 +13,29 @@ from .parametros import tem_permissao
 bp = Blueprint("auth", __name__)
 
 TAMANHO_MINIMO_SENHA = 8
+# A configuração inicial só pode ser feita no próprio computador servidor: assim ninguém
+# da rede se adianta e vira administrador de uma instalação nova.
+ENDERECOS_LOCAIS = {"127.0.0.1", "::1"}
+
+
+def existe_administrador():
+    """Há algum administrador ativo? Uma vez que sim, fica guardado: o sistema impede
+    que o último administrador perca o acesso."""
+    if not current_app.config.get("_TEM_ADMINISTRADOR"):
+        achou = get_db().execute(
+            "SELECT 1 FROM usuarios WHERE perfil = 'administrador' AND ativo = 1 LIMIT 1"
+        ).fetchone()
+        current_app.config["_TEM_ADMINISTRADOR"] = bool(achou)
+    return current_app.config["_TEM_ADMINISTRADOR"]
 
 
 @bp.before_app_request
 def carregar_usuario():
+    # Instalação nova, sem administrador: tudo leva à configuração inicial.
+    if request.endpoint not in ("static", "auth.configuracao_inicial") \
+            and not existe_administrador():
+        return redirect(url_for("auth.configuracao_inicial"))
+
     usuario_id = session.get("usuario_id")
     g.usuario = None
     if usuario_id is not None:
@@ -86,6 +106,49 @@ def login():
             return redirect(url_for("agenda.painel"))
 
     return render_template("auth/login.html")
+
+
+@bp.route("/configuracao-inicial", methods=["GET", "POST"])
+def configuracao_inicial():
+    if existe_administrador():
+        abort(404)
+    if request.remote_addr not in ENDERECOS_LOCAIS:
+        return render_template("auth/configuracao_inicial.html", remoto=True), 403
+
+    if request.method == "POST":
+        nome = request.form.get("nome", "").strip()
+        login_escolhido = request.form.get("login", "").strip()
+        senha = request.form.get("senha", "")
+        erros = []
+        if not nome or not login_escolhido:
+            erros.append("Informe o nome e o usuário.")
+        if len(senha) < TAMANHO_MINIMO_SENHA:
+            erros.append(f"A senha deve ter ao menos {TAMANHO_MINIMO_SENHA} caracteres.")
+        elif senha != request.form.get("confirmacao", ""):
+            erros.append("A confirmação não confere com a senha.")
+        elif get_db().execute("SELECT 1 FROM usuarios WHERE login = ?",
+                              (login_escolhido,)).fetchone():
+            erros.append("Já existe um usuário com esse login; escolha outro.")
+        for erro in erros:
+            flash(erro, "erro")
+        if not erros:
+            conn = get_db()
+            cursor = conn.execute(
+                "INSERT INTO usuarios (nome, login, senha_hash, perfil, trocar_senha)"
+                " VALUES (?, ?, ?, 'administrador', 0)",
+                (nome, login_escolhido, generate_password_hash(senha)),
+            )
+            registrar("Configuração inicial: administrador criado", referencia=login_escolhido)
+            conn.commit()
+            current_app.config["_TEM_ADMINISTRADOR"] = True
+            session.clear()
+            session.permanent = True
+            session["usuario_id"] = cursor.lastrowid
+            flash("Administrador criado. Agora cadastre os servidores e os demais usuários.",
+                  "sucesso")
+            return redirect(url_for("agenda.painel"))
+
+    return render_template("auth/configuracao_inicial.html", remoto=False)
 
 
 @bp.route("/logout", methods=["POST"])

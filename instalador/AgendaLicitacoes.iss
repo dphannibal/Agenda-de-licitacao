@@ -65,7 +65,6 @@ Type: files; Name: "{commondesktop}\{#Nome}.url"
 
 [Code]
 var
-  SenhaAdmin: String;
   PaginaNuvem: TInputDirWizardPage;
 
 function GetVolumeInformation(Raiz: String; Nome: String; TamanhoNome: Cardinal;
@@ -165,7 +164,7 @@ end;
 
 function ParametrosPreparar(Param: String): String;
 begin
-  Result := '--preparar --senha-em "' + ExpandConstant('{tmp}\senha-admin.txt') + '"';
+  Result := '--preparar';
   if PastaNuvem <> '' then Result := Result + ' --nuvem "' + PastaNuvem + '"';
 end;
 
@@ -194,25 +193,6 @@ begin
   Result := '';
 end;
 
-{ Primeira instalação: mostra a senha temporária do admin, gerada pelo --preparar. }
-procedure CurStepChanged(CurStep: TSetupStep);
-var
-  Linhas: TArrayOfString;
-begin
-  if (CurStep = ssPostInstall) and
-     LoadStringsFromFile(ExpandConstant('{tmp}\senha-admin.txt'), Linhas) and
-     (GetArrayLength(Linhas) > 0) then
-  begin
-    SenhaAdmin := Trim(Linhas[0]);
-    if not WizardSilent then
-      MsgBox('Primeiro acesso ao sistema:' + #13#10#13#10 +
-             'Usuário: admin' + #13#10 +
-             'Senha temporária: ' + SenhaAdmin + #13#10#13#10 +
-             'Anote a senha (Ctrl+C copia esta mensagem). Ela será trocada no primeiro acesso.',
-             mbInformation, MB_OK);
-  end;
-end;
-
 procedure CurPageChanged(CurPageID: Integer);
 var
   Texto: String;
@@ -224,8 +204,8 @@ begin
     if WizardIsTaskSelected('compartilhar') then
       Texto := Texto + #13#10#13#10 + 'Nos demais computadores: abra \\' + GetComputerNameString +
         '\Licitacoes e dê dois cliques em "Abrir Agenda de Licitações".';
-    if SenhaAdmin <> '' then
-      Texto := Texto + #13#10#13#10 + 'Primeiro acesso: usuário admin, senha temporária ' + SenhaAdmin + '.';
+    Texto := Texto + #13#10#13#10 + 'Primeira instalação: abra o atalho neste computador e crie a ' +
+      'conta do administrador (só é possível neste computador).';
     Texto := Texto + #13#10#13#10 + 'Os dados ficam em ' + ExpandConstant('{commonappdata}') +
       '\AgendaLicitacoes';
     if PastaNuvem <> '' then

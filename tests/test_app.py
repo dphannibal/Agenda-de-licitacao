@@ -6,7 +6,7 @@ from datetime import date, timedelta
 import pytest
 from werkzeug.security import generate_password_hash
 
-from licitacoes import create_app, garantir_admin_inicial
+from licitacoes import create_app
 from licitacoes.db import get_db
 from licitacoes.feriados import pascoa
 from licitacoes.perfis import FERIADOS_PADRAO
@@ -223,14 +223,35 @@ def test_usuario_desativado_perde_acesso(client, app):
     assert "desativado" in entrar(outro, "consulta").get_data(as_text=True)
 
 
-def test_admin_inicial(tmp_path):
-    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "vazio.sqlite3")})
-    senha = garantir_admin_inicial(app)
-    assert senha and garantir_admin_inicial(app) is None
+def test_configuracao_inicial_cria_o_administrador(tmp_path):
+    app = create_app({"TESTING": True, "PASTA_DADOS": str(tmp_path)})
+    # De outro computador da rede: só o aviso, sem formulário.
+    remoto = app.test_client()
+    remoto.environ_base["REMOTE_ADDR"] = "192.168.0.20"
+    assert remoto.get("/login").headers["Location"] == "/configuracao-inicial"
+    resp = remoto.get("/configuracao-inicial")
+    assert resp.status_code == 403 and "computador servidor" in resp.get_data(as_text=True)
+
+    # No próprio servidor: cria o administrador e já entra.
     client = app.test_client()
-    resp = entrar(client, "admin", senha)
+    url = "/configuracao-inicial"
+    assert client.get("/").headers["Location"] == url
+    resp = post(client, url, {"nome": "Douglas", "login": "douglas", "senha": "curta",
+                              "confirmacao": "curta"}, url)
+    assert "ao menos 8" in resp.get_data(as_text=True)
+    resp = post(client, url, {"nome": "Douglas", "login": "douglas", "senha": SENHA,
+                              "confirmacao": SENHA}, url)
     assert resp.headers["Location"] == "/"
-    assert client.get("/").headers["Location"].endswith("/senha")
+    assert client.get("/").status_code == 200
+
+    # Com administrador no banco, a tela deixa de existir e o login volta ao normal.
+    assert client.get(url).status_code == 404
+    assert remoto.get("/login").status_code == 200
+    assert entrar(app.test_client(), "douglas").headers["Location"] == "/"
+
+    # Banco restaurado (ou atualização): já tem administrador, nada é pedido.
+    outra = create_app({"TESTING": True, "PASTA_DADOS": str(tmp_path)})
+    assert outra.test_client().get("/login").status_code == 200
 
 
 def test_equipe_com_minoria_efetiva_e_rejeitada(client):
