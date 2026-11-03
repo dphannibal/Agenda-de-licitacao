@@ -1,7 +1,11 @@
-﻿; Instalador da Agenda de Licitações (Inno Setup 6).
+﻿; Instalador do SERVIDOR da Agenda de Licitações (Inno Setup 6).
 ; Gerado pelo GitHub Actions (.github/workflows/instalador.yml) a partir do executável que o
-; PyInstaller deixa em dist\AgendaLicitacoes. Para gerar à mão, num Windows:
+; PyInstaller deixa em dist\AgendaLicitacoes. Leva junto o instalador dos usuários
+; (AgendaUsuario.iss), que fica na pasta compartilhada. Para gerar à mão, num Windows:
+;   python instalador\gerar_icone.py
 ;   pyinstaller --distpath dist instalador\agenda.spec
+;   pyinstaller --distpath dist instalador\usuario.spec
+;   "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" /DVersao=1.1.0 instalador\AgendaUsuario.iss
 ;   "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" /DVersao=1.1.0 instalador\AgendaLicitacoes.iss
 
 #ifndef Versao
@@ -11,6 +15,7 @@
 #define Exe "AgendaLicitacoes.exe"
 #define Porta "8080"
 #define Tarefa "Agenda de Licitacoes"
+#define InstaladorUsuarios "Instalar Agenda de Licitações (usuários).exe"
 
 [Setup]
 AppId={{6E0C5B7A-3F1D-4B8E-9C2A-7D4E1F0A8B35}
@@ -24,7 +29,8 @@ PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\dist
-OutputBaseFilename=AgendaLicitacoes-Instalador-{#Versao}
+OutputBaseFilename=AgendaLicitacoes-Servidor-{#Versao}
+SetupIconFile=icone.ico
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -39,16 +45,19 @@ Name: "ptbr"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
 [Tasks]
 Name: "iniciar"; Description: "Iniciar o sistema automaticamente com o Windows (recomendado)"
 Name: "compartilhar"; Description: "Compartilhar a pasta do programa na rede como ""Licitacoes"", somente leitura (recomendado)"
-Name: "firewall"; Description: "Liberar a porta {#Porta} no Firewall do Windows para redes privadas e de domínio (recomendado)"
+Name: "firewall"; Description: "Liberar no Firewall do Windows a porta {#Porta} e a descoberta automática pelos usuários, para redes privadas e de domínio (recomendado)"
 Name: "nuvem"; Description: "Guardar cópias do banco de dados numa pasta do Google Drive (recomendado)"
 
 [Files]
 Source: "..\dist\AgendaLicitacoes\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "configurar.ps1"; DestDir: "{app}\instalador"; Flags: ignoreversion
+Source: "..\dist\AgendaLicitacoes-Usuario-{#Versao}.exe"; DestDir: "{app}"; DestName: "{#InstaladorUsuarios}"; Flags: ignoreversion
 
 [INI]
 ; Atalho na área de trabalho do computador hospedeiro.
 Filename: "{commondesktop}\{#Nome}.url"; Section: "InternetShortcut"; Key: "URL"; String: "http://localhost:{#Porta}/"
+Filename: "{commondesktop}\{#Nome}.url"; Section: "InternetShortcut"; Key: "IconFile"; String: "{app}\{#Exe}"
+Filename: "{commondesktop}\{#Nome}.url"; Section: "InternetShortcut"; Key: "IconIndex"; String: "0"
 
 [Run]
 Filename: "{app}\{#Exe}"; Parameters: "{code:ParametrosPreparar}"; StatusMsg: "Preparando o banco de dados..."; Flags: runhidden waituntilterminated
@@ -204,7 +213,8 @@ begin
       'Neste computador: atalho "{#Nome}" na área de trabalho (http://localhost:{#Porta}/).';
     if WizardIsTaskSelected('compartilhar') then
       Texto := Texto + #13#10#13#10 + 'Nos demais computadores: abra \\' + GetComputerNameString +
-        '\Licitacoes e dê dois cliques em "Abrir Agenda de Licitações".';
+        '\Licitacoes e execute "{#InstaladorUsuarios}". Ele cria o ícone "{#Nome}", que ' +
+        'acha este computador sozinho (ou use o atalho "Abrir Agenda de Licitações").';
     Texto := Texto + #13#10#13#10 + 'Primeira instalação: abra o atalho neste computador e crie a ' +
       'conta do administrador (só é possível neste computador).';
     if PastaNuvem <> '' then

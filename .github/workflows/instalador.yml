@@ -1,7 +1,7 @@
-# Gera o instalador do Windows: roda os testes, empacota o AgendaLicitacoes.exe
-# (PyInstaller), monta o instalador (Inno Setup) e o testa numa instalação silenciosa.
-# O instalador fica disponível em Actions > (execução) > Artifacts; ao criar uma tag
-# vX.Y.Z, ele também é publicado na página de versões (Releases) do repositório.
+# Gera os instaladores do Windows: roda os testes, empacota o AgendaLicitacoes.exe (servidor)
+# e o AgendaUsuario.exe (usuários) com o PyInstaller, monta os instaladores (Inno Setup) e os
+# testa em instalações silenciosas. Eles ficam em Actions > (execução) > Artifacts; ao criar
+# uma tag vX.Y.Z, também são publicados na página de versões (Releases) do repositório.
 name: Instalador do Windows
 
 on:
@@ -41,8 +41,11 @@ jobs:
           $v = (python -c "import licitacoes; print(licitacoes.__version__)").Trim()
           "versao=$v" >> $env:GITHUB_OUTPUT
 
-      - name: Empacotar o AgendaLicitacoes.exe
-        run: pyinstaller --noconfirm --distpath dist --workpath build instalador/agenda.spec
+      - name: Empacotar o AgendaLicitacoes.exe e o AgendaUsuario.exe
+        run: |
+          python instalador/gerar_icone.py
+          pyinstaller --noconfirm --distpath dist --workpath build instalador/agenda.spec
+          pyinstaller --noconfirm --distpath dist --workpath build instalador/usuario.spec
 
       - name: Testar o executável
         run: |
@@ -51,16 +54,18 @@ jobs:
           dist\AgendaLicitacoes\AgendaLicitacoes.exe --preparar --dados $dados
           if (-not (Test-Path "$dados\licitacoes.sqlite3")) { throw "Banco não foi criado" }
 
-      - name: Montar o instalador (Inno Setup)
+      - name: Montar os instaladores (Inno Setup)
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
-          & $iscc "/DVersao=${{ steps.versao.outputs.versao }}" instalador\AgendaLicitacoes.iss
-          if ($LASTEXITCODE -ne 0) { throw "ISCC falhou ($LASTEXITCODE)" }
+          foreach ($script in "AgendaUsuario.iss", "AgendaLicitacoes.iss") {
+            & $iscc "/DVersao=${{ steps.versao.outputs.versao }}" "instalador\$script"
+            if ($LASTEXITCODE -ne 0) { throw "ISCC falhou em $script ($LASTEXITCODE)" }
+          }
 
       - name: Testar instalação e desinstalação silenciosas
         run: |
-          $setup = (Get-ChildItem dist\AgendaLicitacoes-Instalador-*.exe | Select-Object -First 1).FullName
+          $setup = (Get-ChildItem dist\AgendaLicitacoes-Servidor-*.exe | Select-Object -First 1).FullName
           Start-Process $setup -Wait -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", `
             "/TASKS=iniciar,compartilhar,firewall,nuvem", "/NUVEM=C:\NuvemTeste\AgendaLicitacoes", `
             "/LOG=$env:RUNNER_TEMP\instalacao.log"
@@ -85,7 +90,23 @@ jobs:
           foreach ($arquivo in "licitacoes.cifrado", "chave.json", "anfitriao.json", "copia.json") {
             if (-not (Test-Path "C:\NuvemTeste\AgendaLicitacoes\$arquivo")) { throw "Cópia na nuvem sem $arquivo" }
           }
+          if (-not (Get-NetFirewallRule -DisplayName "Agenda de Licitacoes (descoberta)" -ErrorAction SilentlyContinue)) { throw "Regra da descoberta não foi criada" }
           Write-Output "Instalação OK: sistema respondendo, pasta compartilhada, firewall, atalho e cópia na nuvem."
+
+          # Programa dos usuários, instalado a partir da pasta compartilhada do servidor.
+          $usuarios = Get-ChildItem "C:\AgendaLicitacoes\Instalar Agenda de Licitações (usuários).exe"
+          Start-Process $usuarios.FullName -Wait -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"
+          $programa = "$env:LOCALAPPDATA\Programs\AgendaLicitacoes\AgendaUsuario.exe"
+          if (-not (Test-Path $programa)) { throw "Programa dos usuários não foi instalado" }
+          $icone = Join-Path ([Environment]::GetFolderPath("Desktop")) "Agenda de Licitações.lnk"
+          if (-not (Test-Path $icone)) { throw "Ícone dos usuários não foi criado" }
+          $config = Get-Content "$env:LOCALAPPDATA\AgendaLicitacoes\usuario.json" -Raw | ConvertFrom-Json
+          if ($config.pasta_servidor -ne "C:\AgendaLicitacoes") { throw "Pasta do servidor não foi guardada: $($config.pasta_servidor)" }
+          $saida = "$env:RUNNER_TEMP\endereco.txt"
+          $p = Start-Process $programa -Wait -PassThru -ArgumentList "--descobrir", "`"$saida`""
+          $achado = Get-Content $saida -Raw
+          if ($p.ExitCode -ne 0 -or $achado -notmatch ":8080/") { throw "Programa dos usuários não achou o servidor ($achado)" }
+          Write-Output "Programa dos usuários OK: instalado sem administrador e achou o servidor em $achado"
 
           Start-Process "C:\AgendaLicitacoes\unins000.exe" -Wait -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES"
           Start-Sleep -Seconds 5
@@ -96,11 +117,15 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: AgendaLicitacoes-Instalador-${{ steps.versao.outputs.versao }}
-          path: dist/AgendaLicitacoes-Instalador-*.exe
+          name: AgendaLicitacoes-Instaladores-${{ steps.versao.outputs.versao }}
+          path: |
+            dist/AgendaLicitacoes-Servidor-*.exe
+            dist/AgendaLicitacoes-Usuario-*.exe
 
       - name: Publicar na página de versões
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/AgendaLicitacoes-Instalador-*.exe
+          files: |
+            dist/AgendaLicitacoes-Servidor-*.exe
+            dist/AgendaLicitacoes-Usuario-*.exe

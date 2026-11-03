@@ -124,21 +124,31 @@ Quem tem a permissão de parâmetros (Administrador e Gestor, por padrão) alter
 
 Tudo fica registrado na auditoria.
 
-## Instalador para Windows (recomendado)
+## Instaladores para Windows (recomendado)
 
-O instalador `AgendaLicitacoes-Instalador-X.Y.Z.exe` já traz tudo embutido — **não é preciso
-instalar o Python**. Ele é gerado automaticamente pelo GitHub Actions a cada alteração:
-em **Actions → Instalador do Windows → (execução mais recente) → Artifacts**; versões
-marcadas com uma tag `vX.Y.Z` também ficam na página **Releases** do repositório.
+São dois instaladores, que já trazem tudo embutido — **não é preciso instalar o Python**:
+
+| Instalador | Onde instalar |
+|---|---|
+| `AgendaLicitacoes-Servidor-X.Y.Z.exe` | Só no computador que hospeda o sistema |
+| `AgendaLicitacoes-Usuario-X.Y.Z.exe` | Nos computadores dos demais usuários |
+
+Eles são gerados automaticamente pelo GitHub Actions a cada alteração: em **Actions →
+Instalador do Windows → (execução mais recente) → Artifacts**; versões marcadas com uma tag
+`vX.Y.Z` também ficam na página **Releases** do repositório. O instalador do servidor já
+deixa o dos usuários na pasta compartilhada.
+
+### Servidor
 
 No computador que vai hospedar o sistema (fica ligado no expediente), execute o instalador
-como administrador. Ele:
+do servidor como administrador. Ele:
 
 - instala o programa em `C:\AgendaLicitacoes` e guarda os dados em
   `C:\ProgramData\AgendaLicitacoes`, acessível só a administradores;
 - **compartilha a pasta do programa** como `\\NOME-DO-COMPUTADOR\Licitacoes`, somente leitura,
-  com o atalho **“Abrir Agenda de Licitações”** para os demais usuários;
-- **libera a porta 8080** no firewall (redes privadas e de domínio);
+  com o **instalador dos usuários** e o atalho **“Abrir Agenda de Licitações”**;
+- **libera no firewall** a porta 8080 e a porta UDP 8081, da descoberta automática (redes
+  privadas e de domínio);
 - faz o sistema **iniciar com o Windows**, mesmo sem ninguém logado;
 - guarda **cópias do banco numa pasta do Google Drive** (veja abaixo);
 - no primeiro acesso **pelo próprio computador servidor**, pede a criação da conta do
@@ -148,6 +158,30 @@ Cada opção pode ser desmarcada no assistente. Para atualizar, basta executar o
 nova versão (os dados são mantidos). A desinstalação (Painel de Controle → Programas)
 remove o programa, o compartilhamento, a regra do firewall e o início automático, mas
 **mantém os dados**. O registro do servidor fica em `C:\ProgramData\AgendaLicitacoes\servidor.log`.
+
+### Usuários
+
+Em cada computador, abra `\\NOME-DO-SERVIDOR\Licitacoes` e execute **“Instalar Agenda de
+Licitações (usuários)”**. Ele não pergunta nada e **não exige administrador do Windows**:
+cria o ícone **“Agenda de Licitações”** na área de trabalho e no Menu Iniciar.
+
+O ícone abre o sistema no navegador padrão, **achando o servidor sozinho**, nesta ordem:
+
+1. o último endereço que funcionou;
+2. uma pergunta na rede local (UDP 8081), que o servidor responde com o endereço dele —
+   assim o ícone continua funcionando se outro computador assumir a agenda;
+3. o atalho da pasta compartilhada de onde o programa foi instalado (para redes em que a
+   pergunta não chega, como sub-redes separadas por roteador).
+
+Se nada responder, ele avisa que o servidor não foi encontrado. Quem preferir não instalar
+nada pode usar o atalho “Abrir Agenda de Licitações” da pasta compartilhada.
+
+### Ícone
+
+O ícone dos programas é gerado por `instalador/gerar_icone.py` na montagem dos instaladores.
+Para usar o **brasão do município**, salve a imagem como `instalador/brasao.png` (de
+preferência quadrada e com fundo transparente); sem ela, é usado um ícone provisório de
+calendário.
 
 ### Cópia do banco no Google Drive
 
@@ -329,12 +363,19 @@ Estrutura:
 ```
 servidor.py              inicia o servidor (Waitress) e cria o atalho para os usuários
 Iniciar servidor.bat     inicia o servidor no Windows (pasta compartilhada, sem instalador)
-instalador/              empacotamento (PyInstaller), instalador (Inno Setup) e configuração
-                         do Windows; gerados por .github/workflows/instalador.yml
+cliente/agenda_usuario.py  programa dos usuários: acha o servidor e abre o navegador
+instalador/              empacotamento (PyInstaller), instaladores do servidor e dos usuários
+                         (Inno Setup), ícone e configuração do Windows; gerados por
+                         .github/workflows/instalador.yml
 licitacoes/
   __init__.py            criação da aplicação, CSRF, filtros, comandos
   perfis.py              perfis e valores padrão dos parâmetros
-  auth.py                login, troca de senha e controle de acesso
+  auth.py                login, troca de senha, configuração inicial, recuperação e
+                         controle de acesso
+  senhas.py              regras das senhas (tamanho, senhas fáceis, senha anterior)
+  cripto.py              chave dos dados: logins cifrados e senha de recuperação
+  nuvem.py               cópias cifradas no Google Drive e trava de anfitrião único
+  descoberta.py          resposta à pergunta dos programas dos usuários (UDP 8081)
   agenda.py              painel, calendário, cadastro, suspensão, WhatsApp e .ics
   admin.py               usuários, servidores, afastamentos e auditoria
   parametros.py          leitura dos parâmetros (modalidades, situações, permissões)

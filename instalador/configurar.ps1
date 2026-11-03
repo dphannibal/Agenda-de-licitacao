@@ -57,7 +57,7 @@ function Remove-Configuracao {
         }
     }
     Etapa 'remover a regra do firewall' {
-        Get-NetFirewallRule -DisplayName $Regra -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+        Get-NetFirewallRule -DisplayName "$Regra*" -ErrorAction SilentlyContinue | Remove-NetFirewallRule
     }
     Etapa 'remover o compartilhamento' {
         if (Get-SmbShare -Name $Compartilhamento -ErrorAction SilentlyContinue) {
@@ -85,6 +85,9 @@ if ($Acao -eq 'desinstalar') {
         Etapa "liberar a porta $Porta no firewall" {
             New-NetFirewallRule -DisplayName $Regra -Direction Inbound -Action Allow -Protocol TCP `
                 -LocalPort $Porta -Profile Domain, Private | Out-Null
+            # Os programas dos usuários perguntam pelo servidor na porta UDP 8081.
+            New-NetFirewallRule -DisplayName "$Regra (descoberta)" -Direction Inbound -Action Allow `
+                -Protocol UDP -LocalPort 8081 -Profile Domain, Private | Out-Null
         }
     }
     if ($Compartilhar) {

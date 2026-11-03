@@ -1258,3 +1258,53 @@ def test_troca_de_senha_nao_aceita_facil_nem_a_anterior(app, client):
     assert "já foi usada" in post(novo, "/senha", dados, "/senha").get_data(as_text=True)
     dados.update(nova_senha="Serra#Mar-2027", confirmacao="Serra#Mar-2027")
     assert post(novo, "/senha", dados, "/senha").headers["Location"] == "/"
+
+
+def _programa_dos_usuarios():
+    import importlib.util
+
+    caminho = os.path.join(os.path.dirname(__file__), "..", "cliente", "agenda_usuario.py")
+    spec = importlib.util.spec_from_file_location("agenda_usuario", caminho)
+    modulo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modulo)
+    return modulo
+
+
+def test_programa_dos_usuarios_acha_o_servidor_na_rede(monkeypatch):
+    import socket
+
+    from licitacoes import descoberta
+
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as livre:
+        livre.bind(("127.0.0.1", 0))
+        porta = livre.getsockname()[1]
+    ativo = {"sim": True}
+    sock = descoberta.responder("http://SERVIDOR:8080/", 8080, "1.1.0",
+                                ativo=lambda: ativo["sim"], porta=porta)
+    try:
+        usuario = _programa_dos_usuarios()
+        monkeypatch.setattr(usuario, "PORTA_DESCOBERTA", porta)
+        monkeypatch.setattr(usuario, "_destinos", lambda: {"127.0.0.1"})
+        assert usuario.perguntar_na_rede() == ["http://SERVIDOR:8080/", "http://127.0.0.1:8080/"]
+        # Computador que perdeu a vez de anfitrião não responde.
+        ativo["sim"] = False
+        monkeypatch.setattr(usuario, "ESPERA_RESPOSTA", 0.5)
+        assert usuario.perguntar_na_rede() == []
+    finally:
+        sock.close()
+
+
+def test_programa_dos_usuarios_le_o_atalho_da_pasta_do_servidor(tmp_path):
+    import servidor
+
+    servidor.criar_atalho(str(tmp_path), "http://SERVIDOR:8080/")
+    usuario = _programa_dos_usuarios()
+    assert usuario.endereco_do_atalho(str(tmp_path)) == "http://SERVIDOR:8080/"
+    assert usuario.endereco_do_atalho(str(tmp_path / "nao-existe")) is None
+    assert not usuario.e_a_agenda("ftp://x") and not usuario.e_a_agenda(None)
+
+
+def test_identificacao_para_o_programa_dos_usuarios(tmp_path):
+    app = create_app({"TESTING": True, "PASTA_DADOS": str(tmp_path)})  # sem administrador
+    resp = app.test_client().get("/agenda-licitacoes.json")
+    assert resp.status_code == 200 and resp.get_json()["sistema"] == "agenda-licitacoes"

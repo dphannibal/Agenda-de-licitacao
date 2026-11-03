@@ -23,6 +23,7 @@ exe = EXE(
     [],
     exclude_binaries=True,
     name="AgendaLicitacoes",
+    icon=os.path.join(SPECPATH, "icone.ico"),
     console=True,
 )
 coll = COLLECT(exe, a.binaries, a.datas, name="AgendaLicitacoes")

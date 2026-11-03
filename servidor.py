@@ -24,7 +24,7 @@ import sys
 
 from waitress import serve
 
-from licitacoes import __version__, create_app
+from licitacoes import __version__, create_app, descoberta
 from licitacoes.db import get_db
 from licitacoes.nuvem import AGUARDANDO, PRONTA, SEM_SENHA, CopiaNuvem, OutroAnfitriao
 
@@ -185,6 +185,9 @@ def main():
     # Cada usuário conectado é atendido em paralelo (até 16 requisições ao mesmo tempo).
     if nuvem:
         nuvem.iniciar(url)
+    # Os programas dos usuários acham este computador perguntando na rede.
+    descoberta.responder(url, args.porta, __version__,
+                         ativo=lambda: not (nuvem and nuvem.perdeu_a_vez))
     try:
         serve(app, host=args.host, port=args.porta, threads=16)
     finally:

@@ -18,6 +18,8 @@ bp = Blueprint("auth", __name__)
 # A configuração inicial só pode ser feita no próprio computador servidor: assim ninguém
 # da rede se adianta e vira administrador de uma instalação nova.
 ENDERECOS_LOCAIS = {"127.0.0.1", "::1"}
+# Atendidas mesmo antes da configuração inicial ou da recuperação.
+SEMPRE_LIVRES = ("static", "identificacao")
 FORMATO_LOGIN = re.compile(r"^[a-zA-Z0-9._-]{3,40}$")
 
 
@@ -59,10 +61,10 @@ def existe_administrador():
 def carregar_usuario():
     # Computador assumindo a agenda: antes de tudo, a senha de recuperação das cópias.
     if aguardando_recuperacao():
-        if request.endpoint not in ("static", "auth.recuperacao"):
+        if request.endpoint not in SEMPRE_LIVRES + ("auth.recuperacao",):
             return redirect(url_for("auth.recuperacao"))
     # Instalação nova, sem administrador: tudo leva à configuração inicial.
-    elif request.endpoint not in ("static", "auth.configuracao_inicial") \
+    elif request.endpoint not in SEMPRE_LIVRES + ("auth.configuracao_inicial",) \
             and not existe_administrador():
         return redirect(url_for("auth.configuracao_inicial"))
 

@@ -50,6 +50,11 @@ def create_app(config=None):
     app.register_blueprint(admin.bp)
     app.register_blueprint(configuracoes.bp)
 
+    @app.route("/agenda-licitacoes.json")
+    def identificacao():
+        """Usado pelo programa dos usuários para confirmar que o endereço é o da agenda."""
+        return {"sistema": "agenda-licitacoes", "versao": __version__}
+
     @app.route("/brasao.png")
     def imagem_brasao():
         if not brasao.existe():

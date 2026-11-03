@@ -11,3 +11,6 @@ Abrir Agenda de Licitações.url
 # Empacotamento do instalador
 build/
 dist/
+
+# Gerado por instalador/gerar_icone.py
+instalador/icone.ico
