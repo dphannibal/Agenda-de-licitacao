@@ -244,6 +244,8 @@ senha de recuperação das cópias.
 
 ### Logins e senhas
 
+- O usuário continua logado enquanto usar o sistema; depois de **6 horas sem uso** (ou ao
+  clicar em “Sair”), o login é pedido de novo. Fechar o navegador não desconecta.
 - **Senhas** nunca são guardadas: o banco guarda só um resumo irreversível (scrypt), que não
   pode ser convertido de volta na senha.
 - **Logins** ficam cifrados no banco (AES-256-GCM, com a chave do anfitrião); para achar o

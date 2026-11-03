@@ -1308,3 +1308,12 @@ def test_identificacao_para_o_programa_dos_usuarios(tmp_path):
     app = create_app({"TESTING": True, "PASTA_DADOS": str(tmp_path)})  # sem administrador
     resp = app.test_client().get("/agenda-licitacoes.json")
     assert resp.status_code == 200 and resp.get_json()["sistema"] == "agenda-licitacoes"
+
+
+def test_login_vale_por_seis_horas_sem_uso(app, client):
+    from datetime import timedelta
+
+    assert app.permanent_session_lifetime == timedelta(hours=6)
+    entrar(client, "consulta")
+    cookie = client.get_cookie("session")
+    assert cookie.expires is not None  # continua logado mesmo fechando o navegador
