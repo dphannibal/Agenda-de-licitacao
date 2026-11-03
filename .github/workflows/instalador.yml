@@ -63,7 +63,8 @@ jobs:
         run: |
           $setup = (Get-ChildItem dist\AgendaLicitacoes-Instalador-*.exe | Select-Object -First 1).FullName
           Start-Process $setup -Wait -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", `
-            "/TASKS=iniciar,compartilhar,firewall", "/LOG=$env:RUNNER_TEMP\instalacao.log"
+            "/TASKS=iniciar,compartilhar,firewall,nuvem", "/NUVEM=C:\NuvemTeste\AgendaLicitacoes", `
+            "/LOG=$env:RUNNER_TEMP\instalacao.log"
           Get-Content "$env:ProgramData\AgendaLicitacoes\instalacao.log"
           $ok = $false
           foreach ($i in 1..30) {
@@ -74,7 +75,10 @@ jobs:
           if (-not (Get-SmbShare -Name Licitacoes -ErrorAction SilentlyContinue)) { throw "Pasta não foi compartilhada" }
           if (-not (Get-NetFirewallRule -DisplayName "Agenda de Licitacoes" -ErrorAction SilentlyContinue)) { throw "Regra do firewall não foi criada" }
           if (-not (Test-Path "C:\AgendaLicitacoes\Abrir Agenda de Licitações.url")) { throw "Atalho dos usuários não foi criado" }
-          Write-Output "Instalação OK: sistema respondendo, pasta compartilhada, firewall e atalho."
+          foreach ($arquivo in "licitacoes.sqlite3", "anfitriao.json", "copia.json") {
+            if (-not (Test-Path "C:\NuvemTeste\AgendaLicitacoes\$arquivo")) { throw "Cópia na nuvem sem $arquivo" }
+          }
+          Write-Output "Instalação OK: sistema respondendo, pasta compartilhada, firewall, atalho e cópia na nuvem."
 
           Start-Process "C:\AgendaLicitacoes\unins000.exe" -Wait -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES"
           Start-Sleep -Seconds 5

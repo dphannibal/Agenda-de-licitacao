@@ -1,4 +1,5 @@
 import io
+import json
 import re
 from datetime import date, timedelta
 
@@ -992,3 +993,93 @@ def test_atalho_para_os_usuarios(tmp_path):
     with open(caminho, "rb") as arquivo:
         assert arquivo.read() == b"[InternetShortcut]\r\nURL=http://SERVIDOR:8080/\r\n"
     assert all(not ip.startswith("127.") for ip in servidor.enderecos_ipv4())
+
+
+def _anfitriao(tmp_path, nome, nuvem):
+    from licitacoes.nuvem import CopiaNuvem
+
+    return CopiaNuvem(str(nuvem), str(tmp_path / nome), computador=nome)
+
+
+def _contar_servidores(dados):
+    import sqlite3
+
+    conn = sqlite3.connect(str(dados / "licitacoes.sqlite3"))
+    try:
+        return conn.execute("SELECT COUNT(*) FROM servidores").fetchone()[0]
+    finally:
+        conn.close()
+
+
+def test_copia_na_nuvem_e_restauracao_em_outro_computador(tmp_path):
+    nuvem = tmp_path / "Meu Drive" / "AgendaLicitacoes"
+    a = _anfitriao(tmp_path, "PC-A", nuvem)
+    a.assumir()
+    app = create_app({"TESTING": True, "PASTA_DADOS": a.dados, "NUVEM": a})
+    with app.app_context():
+        get_db().execute("INSERT INTO servidores (nome, vinculo) VALUES ('Ana', 'efetivo')")
+        get_db().commit()
+    (tmp_path / "PC-A" / "brasao.png").write_bytes(b"png")
+    assert a.copiar() and a.ultima_copia
+    assert not a.copiar()  # nada mudou: não copia de novo
+    assert (nuvem / "licitacoes.sqlite3").exists() and (nuvem / "brasao.png").exists()
+    assert len(list((nuvem / "copias-diarias").iterdir())) == 1
+
+    # O PC-A parou de responder: o PC-B só assume depois que a trava vence.
+    b = _anfitriao(tmp_path, "PC-B", nuvem)
+    from licitacoes import nuvem as modulo
+
+    with pytest.raises(modulo.OutroAnfitriao):
+        b.assumir()
+    trava = json.loads((nuvem / "anfitriao.json").read_text(encoding="utf-8"))
+    trava["renovada"] -= modulo.TRAVA_VENCIDA + 1
+    (nuvem / "anfitriao.json").write_text(json.dumps(trava), encoding="utf-8")
+    b.assumir()
+    assert "PC-A" in b.restaurar_se_preciso()
+    assert _contar_servidores(tmp_path / "PC-B") == 1
+    assert (tmp_path / "PC-B" / "brasao.png").read_bytes() == b"png"
+    b.copiar(forcar=True)
+
+    # O PC-A volta: percebe que perdeu a vez e não sobrescreve a cópia do PC-B.
+    a._renovar_trava()
+    assert a.perdeu_a_vez and not a.copiar(forcar=True)
+    assert json.loads((nuvem / "copia.json").read_text(encoding="utf-8"))["computador"] == "PC-B"
+
+    # Mais tarde o PC-B é desligado e o PC-A reassume: traz o banco do PC-B e guarda o seu.
+    b.encerrar()
+    assert not (nuvem / "anfitriao.json").exists()
+    a2 = _anfitriao(tmp_path, "PC-A", nuvem)
+    a2.assumir()
+    assert a2.restaurar_se_preciso()
+    assert any(p.name.startswith("licitacoes.anterior-") for p in (tmp_path / "PC-A").iterdir())
+    a2.copiar()
+    # Reiniciado, o mesmo computador retoma a vez e mantém o próprio banco.
+    a3 = _anfitriao(tmp_path, "PC-A", nuvem)
+    a3.assumir()
+    assert a3.restaurar_se_preciso() is None
+
+
+def test_copias_diarias_guardam_trinta_dias(tmp_path):
+    nuvem = tmp_path / "nuvem"
+    a = _anfitriao(tmp_path, "PC-A", nuvem)
+    create_app({"TESTING": True, "PASTA_DADOS": a.dados})
+    diarias = nuvem / "copias-diarias"
+    diarias.mkdir(parents=True)
+    for dia in range(1, 36):
+        (diarias / f"licitacoes-2026-01-{dia:02d}.sqlite3").write_bytes(b"")
+    a.copiar()
+    nomes = sorted(p.name for p in diarias.iterdir())
+    assert len(nomes) == 30 and "licitacoes-2026-01-01.sqlite3" not in nomes
+
+
+def test_situacao_da_copia_nas_configuracoes(app, client):
+    entrar(client, "administrador")
+    assert "Não configurada" in client.get("/admin/parametros").get_data(as_text=True)
+
+    class Copia:
+        pasta, intervalo, ultima_copia = r"G:\Meu Drive\Agenda", 300, "03/11/2026 10:15"
+        ultimo_erro = None
+
+    app.config["NUVEM"] = Copia()
+    html = client.get("/admin/parametros").get_data(as_text=True)
+    assert "03/11/2026 10:15" in html and "a cada 5 minuto(s)" in html

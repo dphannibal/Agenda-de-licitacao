@@ -5,7 +5,8 @@ import re
 import unicodedata
 from datetime import date
 
-from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
+from flask import (Blueprint, abort, current_app, flash, g, redirect, render_template, request,
+                   url_for)
 
 from . import brasao
 from . import feriados as F
@@ -84,6 +85,7 @@ def parametros():
     return render_template(
         "config/parametros.html", modalidades=P.modalidades(), situacoes=P.situacoes(),
         uso_modalidade=uso_modalidade, uso_situacao=uso_situacao, fases=FASES, prazos=PRAZOS,
+        nuvem=current_app.config.get("NUVEM"),
     )
 
 

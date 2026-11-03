@@ -140,12 +140,47 @@ como administrador. Ele:
   com o atalho **“Abrir Agenda de Licitações”** para os demais usuários;
 - **libera a porta 8080** no firewall (redes privadas e de domínio);
 - faz o sistema **iniciar com o Windows**, mesmo sem ninguém logado;
+- guarda **cópias do banco numa pasta do Google Drive** (veja abaixo);
 - mostra, no fim, a **senha temporária do usuário `admin`**.
 
 Cada opção pode ser desmarcada no assistente. Para atualizar, basta executar o instalador da
 nova versão (os dados são mantidos). A desinstalação (Painel de Controle → Programas)
 remove o programa, o compartilhamento, a regra do firewall e o início automático, mas
 **mantém os dados**. O registro do servidor fica em `C:\ProgramData\AgendaLicitacoes\servidor.log`.
+
+### Cópia do banco no Google Drive
+
+Não dá para colocar o banco em uso dentro da pasta do Google Drive: o Drive não trava
+arquivos entre computadores e, sincronizando no meio de uma gravação, corromperia o banco
+ou perderia alterações. Por isso o banco fica no computador anfitrião e o sistema envia
+para a pasta do Drive **cópias completas e consistentes**:
+
+```
+...\Meu Drive\AgendaLicitacoes\
+    licitacoes.sqlite3      ← última cópia (a cada 5 minutos, quando há alterações)
+    brasao.png
+    copias-diarias\         ← uma cópia por dia, dos últimos 30 dias
+    anfitriao.json          ← trava: qual computador está servindo a agenda
+    copia.json              ← quem fez a última cópia, e quando
+```
+
+- No Google Drive para computador, use **“Espelhar arquivos”** em “Meu Drive” e escolha uma
+  pasta dentro de `C:\Users\...\Meu Drive`. A unidade virtual `G:` (modo “Transmitir
+  arquivos”) só existe para o usuário logado e o sistema, que inicia com o Windows, não a
+  enxerga.
+- **Dois computadores nunca servem a agenda ao mesmo tempo:** o anfitrião renova a trava a
+  cada minuto; outro computador que tente iniciar o sistema com a mesma pasta é recusado e
+  recebe o endereço do anfitrião.
+- **Se o anfitrião quebrar:** instale o programa em outro computador indicando a mesma pasta
+  do Drive. Quando a trava fica 10 minutos sem renovação, ele restaura a última cópia (e o
+  brasão) e assume. Se o antigo anfitrião voltar, ele percebe que perdeu a vez e para de
+  enviar cópias.
+- O administrador e o gestor veem a data da última cópia (ou a falha) em **Configurações**.
+- Para restaurar um dia anterior: com o sistema parado, copie o arquivo de `copias-diarias`
+  sobre `C:\ProgramData\AgendaLicitacoes\licitacoes.sqlite3`.
+
+Sem o instalador: `python servidor.py --nuvem "C:\Users\fulano\Meu Drive\AgendaLicitacoes"`
+(intervalo com `--copia-minutos`).
 
 Como o instalador não tem assinatura digital, o Windows pode mostrar “O Windows protegeu o
 computador”: clique em **Mais informações → Executar assim mesmo**.

@@ -34,6 +34,17 @@
 </section>
 
 <section class="cartao">
+  <h2>Cópia de segurança na nuvem</h2>
+  {% if nuvem %}
+  <p>O banco fica neste computador e uma cópia completa vai para <strong>{{ nuvem.pasta }}</strong> a cada {{ nuvem.intervalo // 60 }} minuto(s), quando há alterações.</p>
+  <p>Última cópia: <strong>{{ nuvem.ultima_copia or 'ainda não feita' }}</strong></p>
+  {% if nuvem.ultimo_erro %}<div class="aviso aviso-erro">Falha: {{ nuvem.ultimo_erro }}</div>{% endif %}
+  {% else %}
+  <p class="sutil">Não configurada. O banco está só neste computador; para guardar cópias numa pasta do Google Drive, informe a pasta na instalação (ou inicie o servidor com a opção --nuvem).</p>
+  {% endif %}
+</section>
+
+<section class="cartao">
   <div class="cabecalho">
     <h2>Modalidades e siglas</h2>
     <a class="botao" href="{{ url_for('config.modalidade') }}">+ Nova modalidade</a>

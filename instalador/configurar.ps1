@@ -1,6 +1,7 @@
 ﻿# Configuração do Windows feita pelo instalador da Agenda de Licitações.
 #   -Acao instalar     protege as pastas e, conforme as opções, compartilha a pasta do
 #                      programa, libera o firewall e inicia o sistema com o Windows
+#                      (com -Nuvem, o sistema envia cópias do banco para essa pasta)
 #   -Acao desinstalar  desfaz o que foi configurado (os dados são mantidos)
 # Nomes de grupos variam com o idioma do Windows, por isso as contas vão por SID.
 param(
@@ -9,7 +10,8 @@ param(
     [int]$Porta = 8080,
     [switch]$Compartilhar,
     [switch]$Firewall,
-    [switch]$Iniciar
+    [switch]$Iniciar,
+    [string]$Nuvem = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -95,7 +97,9 @@ if ($Acao -eq 'desinstalar') {
         # Tarefa agendada como SYSTEM: o sistema sobe com o Windows, mesmo sem ninguém logado,
         # sem limite de tempo de execução e reiniciando sozinho se cair.
         Etapa 'iniciar com o Windows' {
-            $executar = New-ScheduledTaskAction -Execute $Exe -WorkingDirectory $Pasta -Argument "--porta $Porta"
+            $argumentos = "--porta $Porta"
+            if ($Nuvem) { $argumentos += " --nuvem `"$($Nuvem.TrimEnd('\'))`"" }
+            $executar = New-ScheduledTaskAction -Execute $Exe -WorkingDirectory $Pasta -Argument $argumentos
             $gatilho = New-ScheduledTaskTrigger -AtStartup
             $opcoes = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) `
                 -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) `
